@@ -3,13 +3,15 @@ var fs = require('fs');
 var upyun = require("upyun")
 var sign = upyun.sign
 
-module.exports = function (args) {
+module.exports = async function (args) {
     var config = this.config;
     var log = this.log;
     var server = config.upyunstorage.server;
     var user = config.upyunstorage.user;
     var password = config.upyunstorage.password;
     var storage_path = config.upyunstorage.path;
+
+    var isdelete = args.delete
 
     const service = new upyun.Service(server, user, password)
 
@@ -28,47 +30,42 @@ module.exports = function (args) {
         let path = paths[i]
         let url_path = "/" + path.replace(publicDir, "").replace("\\", "/")
         if (fs.existsSync(path)) {
+            console.log('新建目录：', url_path)
+            await client.makeDir(url_path)
+            console.log('创建成功：', url_path)
 
-            console.log('新建目录：', url_path);
-            client.makeDir(url_path);
-            console.log('创建成功：', url_path);
+            promise_arr = []
+            let files = fs.readdirSync(path)
+            for (let j = 0; j < files.length; j++) {
+                let item = files[j]
+                statsObj = fs.statSync(path + "\\" + item)
+                if (statsObj.isFile()) {
+                    let localPath = path + "\\" + item
+                    let remotePath = url_path + "/" + item
 
-            fs.readdirSync(path, async (err, files) => {
-                await files.forEach(function (item) {
-                    fs.stat(path + '/' + item, async (err, data) => {
-                        if (data.isFile()) {
-                            let localPath = path + "\\" + item
-                            let remotePath = url_path + "/" + item
-
-                            console.log('上传文件：', localPath);
-                            const content = await fs.createReadStream(localPath)
-                            let result = await client.putFile(remotePath, content)
-
-                            if (((result instanceof Boolean) && !result)) {
-                                console.log('上传失败：', remotePath);
-                            } else {
-                                console.log('上传成功：', remotePath);
-                            }
-                            await fs.unlink(localPath, (err) => {
-                                if (err) {
-                                    throw err;
-                                }
-                                console.log('删除文件：', localPath);
-                            })
-
-                        } else {
-                            console.log('文件夹名：', item);
-                        }
-                    })
-                })
-
-                fs.rmdirSync(path, (err) => {
-                    if (err) {
-                        throw err;
+                    console.log('上传文件：', localPath);
+                    const content = fs.createReadStream(localPath)
+                    let result = await client.putFile(remotePath, content)
+                    if (((result instanceof Boolean) && !result)) {
+                        console.log('上传失败：', remotePath);
+                    } else {
+                        console.log('上传成功：', remotePath);
                     }
-                    console.log('删除目录：', path);
-                })
-            })
+
+                    if (isdelete) {
+                        fs.unlinkSync(localPath)
+                        console.log('删除文件：', localPath);
+                    }
+
+                } else {
+                    console.log('文件夹名：', item);
+                }
+            }
+
+            if (isdelete) {
+                fs.rmdirSync(path)
+                console.log('删除目录：', path);
+            }
         }
     }
 };
